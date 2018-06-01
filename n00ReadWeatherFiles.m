@@ -3,8 +3,8 @@ clc %clear console
 % Load weaher data
 % M = csvread('FRA_Lyon.074810_IWEC.csv'); % if the header is removed
 
-filename = 'FRA_Lyon.074810_IWEC.epw.txt';
-delimiterIn = ',';
+filename = 'FRABordeaux075100IWEC.txt';
+delimiterIn = '\t';
 hederlinesIn = 8;
 M = importdata(filename,delimiterIn, hederlinesIn);
 M = M.data;
