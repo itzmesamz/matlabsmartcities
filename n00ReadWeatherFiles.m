@@ -2,7 +2,7 @@
 clc %clear console
 % Load weaher data
 % M = csvread('FRA_Lyon.074810_IWEC.csv'); % if the header is removed
-
+%fix read weather files nana
 filename = 'FRABordeaux075100IWEC.txt';
 delimiterIn = '\t';
 hederlinesIn = 8;
