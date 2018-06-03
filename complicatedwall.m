@@ -11,12 +11,19 @@ wc=0.20;
 wi=0.08;
 wg=0.05;
 
-
+Kp = 10000; %P-controller gain: large for precision
 
 % concrete:c ; insulation:i; glass:g
 lamc =2;   lami =0.039; lamg =0.96; %[W/m K] thermal conductivity
 Rhoc= 2400; Rhoi= 19;    Rhog=2.6; %[kg/m3]
 Cc=750; Ci=1700;    Cg=840; %[J/kg*K]
+
+epswLW = 0.9;   %long wave wall emmisivity
+epswSW = 0.8;   %short wave wall emmisivity
+
+epsgLW = 0.9;   %long wave glass emmisivity
+taugSW = 0.8;   %short wave glass transmittance
+alphagSW = 0.2; %short wave glass absortivit
 
 RhocCc = Rhoc*Cc; RhoiCi= Rhoi*Ci; RhogCg = Rhog*Cg;  %[J/K m3]
 rho3c3 = 1.2e3; %rho air capacity air
@@ -35,7 +42,7 @@ Rg = wg/(lamg*Sg);
 % convection
 Rvi = 1/(hi*Si1); Rvo = 1/(ho*Sc1);
 
-dt = 3600/3;
+dt = 3600/15;
 ntemp =11;
 nq = 14;
 %% Matrix A
@@ -114,9 +121,9 @@ C1(9,9)= Ci;
 C1(10,10)= Va*rho3c3;
 C1(11,11) = Ci;
 %% % State-space representation
-nnodes = size(C1,1); %n° total nodes
-nC = rank(C1);       %n° nodes with capacity
-n0 = nnodes - nC;   %n° of nodes with zero capacity
+nnodes = size(C1,1); %nÂ° total nodes
+nC = rank(C1);       %nÂ° nodes with capacity
+n0 = nnodes - nC;   %nÂ° of nodes with zero capacity
 
 K = -A1'*G*A1;
 K11 = K(1:n0,1:n0);
@@ -135,9 +142,37 @@ As = inv(CC)*(-K21*inv(K11)*K12 + K22);
 Bs = inv(CC)*[-K21*inv(K11)*Kb1+Kb2 -K21*inv(K11) eye(nnodes-n0,nnodes-n0)];
 
 %Select relevant inputs and outputs
-Bs = Bs(:,[[1 10] nq+[1 7 10 8]]); %inputs: [To To To Phiw Phii Phig Qh]
+Bs = Bs(:,[[1 10 11] nq+[1 7 10 8]]); %inputs: [To To To Phiw Phii Phig Qh]
 Cs = zeros(1,nC);Cs(nC)=1;  %output
 Ds = 0;
+
+% STEP RESPONSE
+% *************
+
+dh = 200;
+dt = 3600/dh; % simulation step 1h/dt = 3600s / dt
+n = dh*24*30; % n° of time samples for 30 days
+n = floor(n);
+Time1 = 0:dt:(n-1)*dt; % time
+th = zeros(nth-n0,n);
+B = Bs (:, [1 2]);
+u1 = [ones(1,n); zeros(1,n)];
+for k = 1:n-1
+ th(:,k+1) = (eye(nth-n0) + dt*As)*th(:,k) + dt*B*u1(:,k);
+end
+subplot(2,1,1)
+plot(Time1/3600,th(7,1:n),'r'), xlabel('Time [h]')
+title('Step response for T_o = 1 C'), ylabel('T [C]')
+
+u1 = [zeros(1,n); ones(1,n)];
+for k = 1:n-1
+ th(:,k+1) = (eye(nth-n0) + dt*As)*th(:,k) + dt*B*u1(:,k);
+end
+subplot(2,1,2)
+plot(Time1/3600,th(7,1:n),'r'), xlabel('Time [h]')
+title('Step response for Q_h = 1 W'), ylabel('T [C]')
+
+clear dh dt n Time1 th B u1 
 
 % SIMULATION
 % **********
@@ -147,86 +182,40 @@ n00ReadWeatherFiles;  %read weather files
 n = size(Time,1);
 th = zeros(nth,n);
 Qh = zeros(n,1);
+TintSP = 20*ones(n,1);
+% Inputs
 u = [Temp Temp Temp ...
-  epswSW*Sc*PhiDiff taugSW*epswSW*Sg*PhiDiff alphagSW*Sg*PhiDiff ...
+  epswSW*Sc1*PhiDiff taugSW*epswSW*Sg*PhiDiff alphagSW*Sg*PhiDiff ...
   Qh];
 
+  % Integrate using lsim (linear systems)
 x0 = zeros(nth,n);
 sys = ss(As,Bs,Cs,Ds);
 [y, t, x] = lsim(sys, u, Time);
-plot(Time/3600,y,'g', Time/3600, Temp,'b'), xlabel('Time [h]')
-title('Simulation lsim'), ylabel('T [C]')
+figure (2)
+subplot(2,1,1)
+plot(Time/3600,y,'g', Time/3600, Temp,'b'), 
+xlabel('Time [h]'), ylabel('T [C]')
+Qh = Kp*(TintSP - y); Qh(1)=0; % thermal load
+subplot(212), plot(Time/3600,Qh,'r')
 
-x0 = zeros(nth,n);
-sys = ss(As,Bs,Cs,Ds);
-[y, t, x] = lsim(sys, u, Time);
-plot(Time/3600,y,'g', Time/3600, Temp,'b'), xlabel('Time [h]')
-title('Simulation lsim'), ylabel('T [C]')
-
-
-
-% Time integration using Euler forward
-% ************************************
-
-% Step response
-dh = 1.96;       %if dh = 1.98,stable if dh = 1.97, instable
-dt = 3600/dh; % simulation step 1h/dt = 3600s / dt
-n = dh*24*30; % n� of time samples for 30 days
-Time = 0:dt:(n-1)*dt; % time
-th = zeros(nth,n);
-u = [ones(1,n); zeros(1,n)];
+% Integrate at each time step 0:dt:dt
+% needs to iterate
+dt = 3600/200; % simulation step 1h/dt = 3600s / dt
+th = zeros(size(As,2),n);
 for k = 1:n-1
- th(:,k+1) = (eye(nth) + dt*A)*th(:,k) + dt*B*u(:,k);
+ x0 = th(:,k);
+ % x = lsode (@(x, t) ssm(x, t, As, Bs, u(k,:)'), x0, 0:dt:dt);
+ [y, t, x] = lsim(sys, u(k:k+1,:), 0:dt:dt,x0);
+ th(:,k+1) = x(2,:)';
+ th(:,k+1) = min(TintSP(k+1),th(:,k+1)); % limit th_int to set point
+ Qhvac(k+1) = Kp*(TintSP(k+1) - th(4,k+1));
+ 
+%  th(:,k) = x(2,:)';
+%  th(:,k) = min(TintSP(k),th(:,k)); % limit th_int to set point
+%  Qhvac(k+1) = Kp*(TintSP(k) - th(4,k));
 end
-subplot(2,2,1)
-plot(Time/3600,th(7,1:n),'r'), xlabel('Time [h]')
-title('Step response for T_o = 1 C'), ylabel('T [C]')
+subplot(211), hold on, plot(Time/3600, th(4,:),'r'), hold off
 
-u = [zeros(1,n); ones(1,n)];
-for k = 1:n-1
- th(:,k+1) = (eye(nth) + dt*A)*th(:,k) + dt*B*u(:,k);
-end
-subplot(2,2,2)
-plot(Time/3600,th(7,1:n),'r'), xlabel('Time [h]')
-title('Step response for Q_h = 1 W'), ylabel('T [C]')
-
-%Stability
-lambda = eig(A);
-min(min(lambda))*dt; %needs to be in [-2 0]
-disp('Stability: min eigenvalue of A * dt in [-2 0]'), disp(min(min(lambda))*dt)
-disp('lam/(rho*c)/w^2 :')
-[(lam1/rho1c1)/(w1/4)^2*dt lam2/rho2c2/(w2/2)^2*dt] %needs to be <1/2
-
-% Simulation with outoor temperature
-n00ReadWeatherFiles;  %read weather files
-
-Temp = interp1(Time, Temp, [Time(1):dt:Time(end)]'); %interpolate for dt
-Time = [Time(1):dt:Time(end)]';
-
-n = size(Time,1);
-th = zeros(nth,n);
-Qh = zeros(n,1);
-u = [Temp'; Qh'];
-for k = 1:n-1
- th(:,k+1) = (eye(nth) + dt*A)*th(:,k) + dt*B*u(:,k);
-end
-subplot(2,2,3)
-plot(Time/3600,th(7,1:n),'r', Time/3600, Temp,'b'), xlabel('Time [h]')
-title('Simulation Euler'), ylabel('T [C]')
-
-disp('Mean temperatures In Out'), disp([mean(th(7,1:n)) mean(Temp)])
-
-% Integration with library functions
-x0 = zeros(nth,n);
-sys = ss(A,B,C);
-[y, t, x] = lsim(sys, u', Time);
-hold on, plot(t/3600,y,'g.'), hold off
-subplot(2,2,4)
-plot(Time/3600,y,'g', Time/3600, Temp,'b'), xlabel('Time [h]')
-title('Simulation lsim'), ylabel('T [C]')
-
-
-
-
-
-
+subplot(212), hold on, plot(Time/3600,Qhvac), hold off
+xlabel('Time [h]'), ylabel('Q_h_v_a_c [W]')
