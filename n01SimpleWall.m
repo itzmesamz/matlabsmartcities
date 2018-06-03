@@ -12,7 +12,7 @@ lam1 = 2;   lam2 = 0.04; %[W/m K]
 rho1c1 = 2.5e6; rho2c2 = 2e6; rho3c3 = 1.2e3;  %[J/K m3]
 w1 = 0.2;   w2 = 0.08;  %[m]
 x1 = 0.05;  x2 = 0.04;  %[m]
-% convection coefficents
+% convection coefficents\
 hi = 4; ho = 10;  %[W/m2 K]
 % Thermal resistances
 % concrete

@@ -16,9 +16,9 @@ wg=0.05;
 % concrete:c ; insulation:i; glass:g
 lamc =2;   lami =0.039; lamg =0.96; %[W/m K] thermal conductivity
 Rhoc= 2400; Rhoi= 19;    Rhog=2.6; %[kg/m3]
-Cc=750; Ci=1700;    Cg=840; %[J/kg*K]
+Cpc=750; Cpi=1700;    Cpg=840; %[J/kg*K]
 
-RhocCc = Rhoc*Cc; RhoiCi= Rhoi*Ci; RhogCg = Rhog*Cg;  %[J/K m3]
+RhocCc = Rhoc*Cpc; RhoiCi= Rhoi*Cpi; RhogCg = Rhog*Cpg;  %[J/K m3]
 rho3c3 = 1.2e3; %rho air capacity air
 
 % convection coefficents
