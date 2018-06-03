@@ -1,6 +1,7 @@
 close all;
 clear all;
 clc;
+%% FREE RUN
 
 % Physical properties
 % *******************
@@ -44,9 +45,15 @@ Rvi = 1/(hi*Si1); Rvo = 1/(ho*Sc1);
 
 dt = 3600/15;
 ntemp =11;
-nq = 14;
+nq = 15;
+%% model
+nth = 11; nq = 15; % # of temperature node, # of flow nodes
+
+Tm = 20 + 273;   %mean temp for radiative exchange
+sigma = 5.67e-8;  %[W/m2 K4]
+Fwg = 1/5;        %view factor wall - glass
 %% Matrix A
-    A1 = zeros(nq,ntemp);
+    A1 = zeros(nq,nth);
 
     A1(1,1)= 1;
 
@@ -71,13 +78,13 @@ nq = 14;
     A1 (8,7)= -1;
     A1 (8,8)= 1;
 
-    A1 (9,8)= -1;
-    A1 (9,9)= 1;
+    A1 (9,9)= -1;
+    A1 (9,8)= 1;
 
-    A1 (10,9)= -1;
-    A1 (10,10)= 1;
+    A1 (10,10)= -1;
+    A1 (10,9)= 1;
 
-    A1 (11,10)= -1;
+    A1 (11,11)= 1;
 
     A1 (12,8)= 1;
 
@@ -85,12 +92,14 @@ nq = 14;
     A1 (13,11)= -1;
 
     A1 (14,11)= 1;
+    A1 (15,8)=1;
 
     %end of matrix A
+
 %% R matrix
 % Thermal circuit
 %****************
-nth = 11; nq = 14;  % # of temperature node, # of flow nodes
+
 % resistances
 R = zeros(nq,nq);
 R(1,1) = Rvo;
@@ -105,11 +114,11 @@ R(11,11) = Va*rho3c3;
 R(12,12) = Va*rho3c3;
 R(13,13) = Rg/2;
 R(14,14) = Rg/2+Rvo;
-
+R(15,15) = 1/Kp;
 G = inv(R);
 %% Capacitance
 % capacitances
-C1 = zeros(nth,nth);
+C1 = zeros(nth);
 C1(2,2)=Cc/4; 
 C1(3,3)=C1(2,2); 
 C1(4,4)=C1(2,2);
@@ -121,9 +130,10 @@ C1(9,9)= Ci;
 C1(10,10)= Va*rho3c3;
 C1(11,11) = Ci;
 %% % State-space representation
-nnodes = size(C1,1); %nÂ° total nodes
-nC = rank(C1);       %nÂ° nodes with capacity
-n0 = nnodes - nC;   %nÂ° of nodes with zero capacity
+%State-space model
+nnodes = size(C1,1); %n° total nodes
+nC = rank(C1);       %n° nodes with capacity
+n0 = nnodes - nC;   %n° of nodes with zero capacity
 
 K = -A1'*G*A1;
 K11 = K(1:n0,1:n0);
@@ -142,66 +152,37 @@ As = inv(CC)*(-K21*inv(K11)*K12 + K22);
 Bs = inv(CC)*[-K21*inv(K11)*Kb1+Kb2 -K21*inv(K11) eye(nnodes-n0,nnodes-n0)];
 
 %Select relevant inputs and outputs
-Bs = Bs(:,[[1 10 11] nq+[1 7 10 8]]); %inputs: [To To To Phiw Phii Phig Qh]
-Cs = zeros(1,nC);Cs(nC)=1;  %output
-Ds = 0;
-
-% STEP RESPONSE
-% *************
-
-dh = 200;
-dt = 3600/dh; % simulation step 1h/dt = 3600s / dt
-n = dh*24*30; % n° of time samples for 30 days
-n = floor(n);
-Time1 = 0:dt:(n-1)*dt; % time
-th = zeros(nth-n0,n);
-B = Bs (:, [1 2]);
-u1 = [ones(1,n); zeros(1,n)];
-for k = 1:n-1
- th(:,k+1) = (eye(nth-n0) + dt*As)*th(:,k) + dt*B*u1(:,k);
-end
-subplot(2,1,1)
-plot(Time1/3600,th(7,1:n),'r'), xlabel('Time [h]')
-title('Step response for T_o = 1 C'), ylabel('T [C]')
-
-u1 = [zeros(1,n); ones(1,n)];
-for k = 1:n-1
- th(:,k+1) = (eye(nth-n0) + dt*As)*th(:,k) + dt*B*u1(:,k);
-end
-subplot(2,1,2)
-plot(Time1/3600,th(7,1:n),'r'), xlabel('Time [h]')
-title('Step response for Q_h = 1 W'), ylabel('T [C]')
-
-clear dh dt n Time1 th B u1 
+Bs = Bs(:,[[1 11 12 14 15] nq+[1 8]]); %inputs: [To To To Phiw Phii Phig Qh]
+Cs = zeros(1,nC);Cs(8)=1;  %output
+Ds = zeros(1,7);
 
 % SIMULATION
 % **********
-
-n00ReadWeatherFiles;  %read weather files
-
+n00ReadWeatherFiles;
 n = size(Time,1);
 th = zeros(nth,n);
-Qh = zeros(n,1);
+Qa = zeros(n,1);  %auxiliary sources (electrical, persons, etc.)
 TintSP = 20*ones(n,1);
 % Inputs
-u = [Temp Temp Temp ...
-  epswSW*Sc1*PhiDiff taugSW*epswSW*Sg*PhiDiff alphagSW*Sg*PhiDiff ...
-  Qh];
+PhiTot = PhiDir + PhiDif + PhiRef;
+u = [Temp Temp Temp Temp TintSP ...
+  epswSW*Sc1*PhiTot ...
+  Qa];
 
-  % Integrate using lsim (linear systems)
+% Integrate using lsim (linear systems)
 x0 = zeros(nth,n);
 sys = ss(As,Bs,Cs,Ds);
 [y, t, x] = lsim(sys, u, Time);
-figure (2)
 subplot(2,1,1)
 plot(Time/3600,y,'g', Time/3600, Temp,'b'), 
 xlabel('Time [h]'), ylabel('T [C]')
 Qh = Kp*(TintSP - y); Qh(1)=0; % thermal load
 subplot(212), plot(Time/3600,Qh,'r')
+xlabel('Time [h]'), ylabel('Q_h_v_a_c [W]')
 
 % Integrate at each time step 0:dt:dt
 % needs to iterate
-dt = 3600/200; % simulation step 1h/dt = 3600s / dt
+dt = 3600/1; % simulation step 1h/dt = 3600s / dt
 th = zeros(size(As,2),n);
 for k = 1:n-1
  x0 = th(:,k);
@@ -215,7 +196,8 @@ for k = 1:n-1
 %  th(:,k) = min(TintSP(k),th(:,k)); % limit th_int to set point
 %  Qhvac(k+1) = Kp*(TintSP(k) - th(4,k));
 end
+figure(2)
 subplot(211), hold on, plot(Time/3600, th(4,:),'r'), hold off
-
+xlabel('Time [h]'), ylabel('T [C]')
 subplot(212), hold on, plot(Time/3600,Qhvac), hold off
 xlabel('Time [h]'), ylabel('Q_h_v_a_c [W]')
