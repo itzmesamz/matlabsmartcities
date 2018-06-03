@@ -1,7 +1,7 @@
 close all;
 clear all;
 clc;
-%% FREE RUN
+
 
 % Physical properties
 % *******************
@@ -152,7 +152,7 @@ As = inv(CC)*(-K21*inv(K11)*K12 + K22);
 Bs = inv(CC)*[-K21*inv(K11)*Kb1+Kb2 -K21*inv(K11) eye(nnodes-n0,nnodes-n0)];
 
 %Select relevant inputs and outputs
-Bs = Bs(:,[[1 11 12 14 15] nq+[1 8]]); %inputs: [To To To Phiw Phii Phig Qh]
+Bs = Bs(:,[[1 11 12 14 15] nq+[1 8]]); %inputs: [To To To To Tsim Phic Qh]
 Cs = zeros(1,nC);Cs(8)=1;  %output
 Ds = zeros(1,7);
 
@@ -197,7 +197,7 @@ for k = 1:n-1
 %  Qhvac(k+1) = Kp*(TintSP(k) - th(4,k));
 end
 figure(2)
-subplot(211), hold on, plot(Time/3600, th(4,:),'r'), hold off
+subplot(211), hold on, plot(Time/3600, th(8,:),'r'),plot(Time/3600, th(1,:),'g'),plot(Time/3600, Temp,'b'), hold off
 xlabel('Time [h]'), ylabel('T [C]')
 subplot(212), hold on, plot(Time/3600,Qhvac), hold off
 xlabel('Time [h]'), ylabel('Q_h_v_a_c [W]')
